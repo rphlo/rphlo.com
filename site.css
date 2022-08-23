@@ -1,0 +1,95 @@
+@font-face {
+    font-family: "4Ants";
+    font-display: auto;
+    src: url('https://cdn.rphlo.com/4ants-mono.woff2') format('woff2'), url('https://cdn.rphlo.com/4ants-mono.woff') format('woff'), url('https://cdn.rphlo.com/4ants-mono.ttf') format('truetype');
+}
+  
+html, body, .home {
+    background-color: #111;
+    font-family: '4Ants', Monospace, sans-serif;
+    line-height: 1em;
+    font-weight: normal;
+    font-style: normal;
+    font-size: 1.3em;
+    color: #eee;
+}
+  
+.center {
+    text-align: center;
+}
+  
+body { 
+    max-width: 1080px;
+    margin: 0 auto !important; 
+    float: none !important; 
+    padding: 5px;
+}
+  
+header, .blog-posts, footer { text-align: center; }
+  
+header {
+  font-size: 1.7em;
+}
+header > nav {
+  font-size: 0.7em;
+}
+
+content {
+    /* font-family: 'Akt', sans-serif; */
+    font-weight: normal;
+    font-style: normal;
+    font-size: 0.8em;
+}
+  
+nav>p>a:not(:first-child)::before { content: '- '; color: #eee; }
+  
+a {
+    text-decoration: none;
+    white-space: nowrap;
+    color: #03e;
+}
+  
+code {
+    background: #333;
+    color: limegreen;
+    font-size: 1em;
+}
+  
+.title:before {
+    display: block;
+    content: " ";
+    height: 180px;
+    width: 100%;
+    background: url('/rphlo_logo_hero_color.png') no-repeat center center;
+    background-size: auto 180px;
+}
+  
+.blog-posts{
+    list-style: none;
+    list-style-type: none;
+    list-style-position: outside;
+}
+  
+.large-image {
+    width: 100%;
+}
+  
+.item-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: center;
+    overflow: hidden;
+    margin: 1rem;
+    line-height: 1.5;
+    justify-content: center;
+}
+  
+.item-list > span:not(:last-child)::after {
+    content: "-";
+    padding: 0 5px;
+    color: #eee;
+}
+  
+.small{
+    font-size: .7em
+}
