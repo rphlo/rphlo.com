@@ -93,3 +93,7 @@ code {
 .small{
     font-size: .7em
 }
+
+hr {
+    border-width: 4px;
+}
