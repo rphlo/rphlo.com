@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Image Resizer</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="icon" href='./favicon.svg' />
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-+0n0xVW2eSR5OomGNYDnhzAbDsOXxcvSN1TPprVMTNDbiYZCxYbOOl7+AMvyTG2x" crossorigin="anonymous">
+    </head>
+    <body>
+        <div class="container">
+        <h1>Image Resizer</h1>
+        <form id="form">
+            <label for="file" class="form-label">Image File:</label>
+            <input class="form-control" type="file" id="file" name="file" accept="image/*" required/>
+            <label for="maxsize" class="form-label">Max width or height:</label>
+            <input class="form-control" type="number" step="1" min="1" id="maxsize" name="maxsize" value="2000" required/>
+            <input style="margin-top:15px" class="form-control btn btn-primary" type="submit" value="Submit" />
+        </form>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js" integrity="sha256-xoh0y6ov0WULfXcLMoaA6nZfszdgI8w2CEJ/3k8NBIE=" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/js/bootstrap.bundle.min.js" integrity="sha384-gtEjrD/SeCtmISkJkNUaaKMoLD0//ElJ19smozuHV6z3Iehds+3Ulb9Bn9Plx0x4" crossorigin="anonymous"></script>
+    <script>
+    function scaleImage(img, ratio) {
+      var canvas =  document.createElement('canvas')
+      canvas.width = Math.floor(img.width*ratio)
+      canvas.height = Math.floor(img.height*ratio)
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, Math.floor(img.width*ratio), Math.floor(img.height*ratio));
+      return canvas;
+    }
+    
+    function onImage(img, filename) {
+        var modified = false;
+        var maxsize = document.getElementById('maxsize').value;
+        var dir = 'height'
+        if (img.width > img.height) {
+            dir = 'width'
+        }
+        if (img[dir] > maxsize) {
+            modified = true
+            img = scaleImage(img, maxsize / img[dir])
+        }
+        if (!modified) {
+            alert('Image is already correct dimension')
+            return
+        }
+        var ext = filename.split('.').pop();
+        filename = filename.slice(0, filename.length - ext.length) + 'jpg';
+        img.toBlob(function(blob) {
+            saveAs(blob, filename);
+        }, 'image/jpeg', '0.8');
+    }
+
+    document.getElementById('form').onsubmit = function(ev) {
+        ev.preventDefault();
+        var file = document.getElementById('file').files[0];
+        var img = new Image;
+        img.onload = function() {
+            onImage(img, file.name)
+        }
+        img.src = URL.createObjectURL(file);
+    };
+    </script>    
+</body>
