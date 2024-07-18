@@ -1,0 +1,1103 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>The Laby 1vs1</title>
+<style>
+	html {
+	    height: 100%;
+    	margin: 0;
+		font-family: sans-serif,helvetica;
+        font-size: 12px;
+	    background: blue;
+        color: white
+    }
+</style>
+</head>
+<body>
+<div style="display: flex;justify-content: space-between">
+    <div style="text-align: center">
+        <h2>Player 1</h2>
+        <div id="gameA"></div>
+    </div>
+    <div>
+        <h1>Laby 1vs1</h1>
+        <div>
+            Controls:
+            <pre><b>k</b> = start the competition
+
+<b>Player 1:</b>
+<b>W,A,S,D</b> = Move forward, back and turn left or right
+<b>T</b> = Toggle map and view
+<b>G</b> = Push through fence (10 sec penalty)
+
+<b>Player 2:</b>
+<b>Arrow keys</b> = Move forward, back and turn left or right
+<b>Right CTRL</b> = Toggle map and view
+<b>Right Shift</b> = Push through fence (10 sec penalty)
+            </pre>
+        </div>
+    </div>
+    <div style="text-align: center">
+        <h2>Player 2</h2>
+        <div id="gameB"></div>
+    </div>
+</div>
+<script>
+
+// Laby Reloaded (c) Jarkko Ryyppo 2020-
+
+function planningundo(){
+  custom_cx.pop();
+  custom_cy.pop();
+  setcourse();
+}
+
+function planningopenlink(){
+  if(custom_cx.length >1){
+    var url=location.toString().replace(location.search, "");
+    url=url+'?maze='+mazeid;
+    
+    if (lanes > 0){
+      url=url+'&lanes='+lanes;
+    }
+
+    url=url+'&c=';
+
+    for(i=0;i<custom_cx.length-1;i++){
+      url=url+custom_cx[i]+','+custom_cy[i]+',';
+    }
+    url=url+custom_cx[custom_cx.length-1]+','+custom_cy[custom_cx.length-1];
+    document.location=url+'&course=custom&cname=Custom%20Course';
+  }
+}
+
+function getParameterByName(name) {
+    try {
+        name = name.replace(/[\[]/, "\\[").replace(/[\]]/, "\\]");
+        var regex = new RegExp("[\\?&]" + name + "=([^&#]*)"),
+        results = regex.exec(location.search + (location.hash).replace('#', '&'));
+        return results === null ? "" : decodeURIComponent(results[1].replace(/\+/g, " "));
+    } catch (err) {
+        return '';
+    }
+}
+
+var colorwalls=false;
+
+if(getParameterByName('color')==1){
+  colorwalls = true;
+}
+
+var lanes=0;
+
+if(getParameterByName('lanes')>0){
+  lanes=1*getParameterByName('lanes');
+}
+
+
+function Rand () {
+    var m_w = 123456789;
+    var m_z = 987654321;
+    var mask = 0xffffffff;
+
+    function seed(i) {
+        m_w = (123456789 + i) & mask;
+        m_z = (987654321 - i) & mask;
+    }
+
+    function random() {
+        m_z = (36969 * (m_z & 65535) + (m_z >> 16)) & mask;
+        m_w = (18000 * (m_w & 65535) + (m_w >> 16)) & mask;
+        var result = ((m_z << 16) + (m_w & 65535)) >>> 0;
+        result /= 4294967296;
+        return result;
+    }
+
+    return {
+        seed,
+        random,
+    }
+}
+
+function Maze(div, options) {
+    var started = false;
+    var m = [];
+    var beginner_cx = [];
+    var beginner_cy = [];
+
+    var penalty = 0;
+    var trackx = [];
+    var tracky = [];
+    var trackt = [];
+    var starttime;
+    var mapvisible = false;
+
+    var cx=[];
+    var cy=[];
+
+    var o = options?.m || 0.4;
+    var rand = new Rand();
+    rand.seed(options.seed);
+    var random = rand.random;
+    
+    let mazeEl = document.createElement("canvas");
+    mazeEl.width = 500;
+    mazeEl.height = 600;
+    mazeEl.style.display = "none";
+    
+    let viewEl = document.createElement("canvas");
+    viewEl.width = 200;
+    viewEl.height = 200;
+    viewEl.style.display = "none";
+
+    let povEl = document.createElement("canvas");
+    povEl.width = 500;
+    povEl.height = 500;
+        
+    document.getElementById(div).appendChild(mazeEl);
+    document.getElementById(div).appendChild(viewEl);
+    document.getElementById(div).appendChild(povEl);
+    
+    let resultEl = document.createElement("div");
+    document.getElementById(div).appendChild(resultEl);
+
+    let maze = mazeEl.getContext('2d');
+    let view = viewEl.getContext('2d');
+    let pov = povEl.getContext('2d');
+    
+    view.fillStyle = '#f00';
+    view.strokeStyle = '#f00';
+    
+    pov.fillStyle = '#f00';
+    pov.strokeStyle = '#000';
+
+    let nextcontrol = "Start by pressing key 'k'";
+
+    function drawmaze() {
+        maze.fillStyle ='#FBDFC8';
+        maze.clearRect(0, 0, 1500, 1500);
+    
+        maze.fillStyle ='#FBDFC8';
+        maze.fillRect(0, 0, 1500, 1500);
+    
+        maze.font = "16px Arial";
+        maze.beginPath();
+    
+        maze.lineWidth = 1;
+        maze.strokeStyle = '#f0f';
+        maze.stroke();
+        maze.fillStyle = '#f0f';    
+    
+        for (var i = 1; i < cx.length; i++) {
+            maze.beginPath();
+            maze.lineWidth = 1;
+            maze.moveTo(cx[i] * 10, cy[i] * 10);
+            maze.lineTo(cx[i - 1] * 10, cy[i - 1] * 10);
+            maze.lineWidth = 1;
+            maze.strokeStyle = '#f0f';
+            maze.stroke();
+        }
+        for (var i = 1; i < cx.length; i++) {
+            maze.beginPath();
+            maze.arc(cx[i] * 10, cy[i] * 10, 20, 0, 2 * Math.PI, false);
+            maze.fillStyle ='#FBDFC8';
+            maze.fill();
+            maze.lineWidth = 1;
+            maze.strokeStyle = '#f0f';
+            maze.stroke();
+            maze.fillStyle = '#f0f';
+            if (i == 1 || i == 4) {
+                maze.fillText("" + i, cx[i] * 10 - 34, cy[i] * 10 + 6);
+            } else {
+                maze.fillText("" + i, cx[i] * 10 + 24, cy[i] * 10 + 6);
+            }
+        }
+        maze.beginPath();
+        maze.arc(cx[cx.length - 1] * 10, cy[cx.length - 1] * 10, 13, 0, 2 * Math.PI, false);
+        maze.fillStyle ='#FBDFC8';
+        maze.fill();
+        maze.lineWidth = 1;
+        maze.strokeStyle = '#f0f';
+        maze.stroke();
+
+        maze.beginPath();
+        maze.lineWidth = 1;
+        maze.moveTo(cx[0] * 10 - 15, cy[0] * 10 - 3);
+        maze.lineTo(cx[0] * 10 + 12, cy[0] * 10 - 10);
+        maze.lineTo(cx[0] * 10 + 5, cy[0] * 10 + 15);
+        maze.lineTo(cx[0] * 10 - 15, cy[0] * 10 - 3);
+        maze.lineWidth = 1;
+        maze.fillStyle ='#FBDFC8';
+        maze.closePath();
+        maze.fill();
+        maze.strokeStyle = '#f0f';
+        maze.stroke();
+    
+        maze.strokeStyle = '#000';
+        maze.lineWidth = 1;
+        var s=[];
+        for (x = 0; x < 80; x++) {
+            for (y = 0; y < 80; y++) {
+                for (z = 0; z < 2; z++) {
+                    if (z == 0 && m['' + x + '_' + y + '_' + 0] > 0) {
+                        if(s[''+(x * 10 + 5)+'_'+( y * 10 - 5)]>0){
+                            s[''+(x * 10 + 5)+'_'+( y * 10 - 5)]++;
+                        }else{
+                            s[''+(x * 10 + 5)+'_'+( y * 10 - 5)]=1;
+                        }
+                        if(s[''+(x * 10 + 5)+'_'+( y * 10 + 5)]>0){
+                            s[''+(x * 10 + 5)+'_'+( y * 10 + 5)]++;
+                        }else{
+                            s[''+(x * 10 + 5)+'_'+( y * 10 + 5)]=1;
+                        }
+                    }
+                    if (z == 1 && m['' + x + '_' + y + '_' + 1] > 0) {
+                        if( s[''+(x * 10 - 5)+'_'+( y * 10 + 5)]>0){
+                            s[''+(x * 10 - 5)+'_'+( y * 10 + 5)]++;
+                        }else{
+                            s[''+(x * 10 - 5)+'_'+( y * 10 + 5)]=1;
+                        }
+                        if(s[''+(x * 10 + 5)+'_'+( y * 10 + 5)]>0){
+                            s[''+(x * 10 + 5)+'_'+( y * 10 + 5)]++;
+                        }else{
+                            s[''+(x * 10 + 5)+'_'+( y * 10 + 5)]=1;
+                        }
+                    }
+                }
+            }
+        }
+        maze.lineWidth = 4;
+        var fix1=1, fix2=0;
+        for (x = 0; x < 80; x++) {
+            for (y = 0; y < 80; y++) {
+                for (z = 0; z < 2; z++) {
+                    if (z == 0 && m['' + x + '_' + y + '_' + 0] > 0) {
+                        maze.strokeStyle = style[m['' + x + '_' + y + '_' + 0]];
+                        maze.lineWidth = 4;
+                        if(s[''+(x * 10 + 5)+'_'+( y * 10 - 5)]==1 && s[''+(x * 10 + 5)+'_'+( y * 10 + 5)]==1){
+                            maze.lineWidth = 1; fix1=-1;  fix2=1;
+    
+                        }
+                        maze.beginPath();
+                        maze.moveTo(x * 10 + 5, y * 10 - 6+fix2);
+                        maze.lineTo(x * 10 + 5, y * 10 + 6 + fix1);
+                        maze.closePath();
+                        maze.stroke()
+                        fix1=1;  fix2=0;
+                    }
+                    if (z == 1 && m['' + x + '_' + y + '_' + 1] > 0) {
+                        maze.strokeStyle = style[m['' + x + '_' + y + '_' + 1]];
+                        maze.lineWidth = 4;
+                        if(s[''+(x * 10 - 5)+'_'+( y * 10 + 5)]==1 &&   s[''+(x * 10 + 5)+'_'+( y * 10 + 5)]==1){ 
+                            maze.lineWidth = 1; fix1=-1;  fix2=1;
+                        } 
+                        maze.beginPath();
+                        maze.moveTo(x * 10 - 6 +fix2, y * 10 + 5);
+                        maze.lineTo(x * 10 + 6 + fix1, y * 10 + 5);
+                        maze.closePath();
+                        maze.stroke()
+                        
+                        fix1=1;  
+                        fix2=0;
+                    }
+                }
+            }
+        }
+        maze.lineWidth = 1;
+        maze.globalCompositeOperation = 'darken';
+        for (x = 0; x < 80; x++) {
+            for (y = 0; y < 80; y++) {
+                if(m['' + x + '_' + y + '_solid']==1){
+                    maze.fillStyle = '#333'; 
+                    maze.beginPath();
+                    maze.moveTo(x * 10 -5, y * 10 - 5);
+                    maze.lineTo(x * 10 + 5, y * 10 - 5);
+
+                    maze.lineTo(x * 10 + 5, y * 10 + 5);
+
+                    maze.lineTo(x * 10 - 5, y * 10 + 5);
+
+                    maze.closePath();
+
+                    maze.fill();
+                }
+            }
+        }
+        maze.globalCompositeOperation = 'darken';
+        maze.strokeStyle = '#000';
+        for (x = 0; x < 80; x++) {
+            for (y = 0; y < 80; y++) {
+                    if (m['' + x + '_' + y + '_a' ] > 0) {
+                    maze.fillStyle = '#ff0'; 
+                    maze.beginPath();
+                    maze.moveTo(x * 10 -5, y * 10 - 5);
+                    maze.lineTo(x * 10 + 5, y * 10 - 5);
+
+                    maze.lineTo(x * 10 + 5, y * 10 + 5);
+    
+                    maze.lineTo(x * 10 - 5, y * 10 + 5);
+    
+                    maze.closePath();
+    
+                    maze.fill();
+    
+                }
+            }
+        }
+        maze.lineWidth = 1;
+        maze.globalCompositeOperation = 'source-over';
+    
+        maze.font = "16px Arial";
+        maze.beginPath();
+    
+        maze.lineWidth = 1;
+        maze.strokeStyle = '#f0f';
+        maze.stroke();
+        maze.fillStyle = '#f0f';
+
+        for (var i = 1; i < cx.length; i++) {
+            maze.beginPath();
+            maze.arc(cx[i] * 10, cy[i] * 10, 20, 0, 2 * Math.PI, false);
+            maze.lineWidth = 1;
+            maze.strokeStyle = '#f0f';
+            maze.stroke();
+            maze.fillStyle = '#f0f';
+            if (i == 1 || i == 4) {
+                maze.fillText("" + i, cx[i] * 10 - 34, cy[i] * 10 + 6);
+            } else {
+                maze.fillText("" + i, cx[i] * 10 + 24, cy[i] * 10 + 6);
+            }
+        }
+        maze.beginPath();
+        maze.arc(cx[cx.length - 1] * 10, cy[cx.length - 1] * 10, 13, 0, 2 * Math.PI, false);
+        maze.lineWidth = 1;
+        maze.strokeStyle = '#f0f';
+        maze.stroke();
+    
+        maze.beginPath();
+        maze.lineWidth = 1;
+        maze.moveTo(cx[0] * 10 - 15, cy[0] * 10 - 3);
+        maze.lineTo(cx[0] * 10 + 12, cy[0] * 10 - 10);
+        maze.lineTo(cx[0] * 10 + 5, cy[0] * 10 + 15);
+        maze.lineTo(cx[0] * 10 - 15, cy[0] * 10 - 3);
+        maze.lineWidth = 1;
+         maze.fillStyle ='#FBDFC8';
+        maze.closePath();
+        maze.strokeStyle = '#f0f';
+        maze.stroke();
+    }    
+    function makemaze() {
+        for (x = 0; x < 80; x++) {
+            for (y = 0; y < 80; y++) {
+                for (z = 0; z < 2; z++) {
+                    var tmp=random();
+                    if (tmp < o) {
+                        var col=1;
+                        if (tmp < o/3){
+                            col=3;
+                        }
+                        if (z == 0) {
+                            m['' + x + '_' + y + '_' + 0] = col;
+                            m['' + (x + 1) + '_' + y + '_' + 2] = col;
+                        } else {
+                            m['' + x + '_' + y + '_' + 1] = col;
+                            m['' + x + '_' + (y + 1) + '_' + 3] = col;
+                        }
+                    } else {
+                        if (z == 0) {
+                            m['' + x + '_' + y + '_' + 0] = 0;
+                            m['' + (x + 1) + '_' + y + '_' + 2] = 0;
+                        } else {
+                            m['' + x + '_' + y + '_' + 1] = 0;
+                            m['' + x + '_' + (y + 1) + '_' + 3] = 0;
+                        }
+                    }
+                }
+            }
+        }
+        for (x = 0; x < 80; x++) {
+            for (y = 0; y < 80; y++) {
+                var tester = 0;
+                for (z = 0; z < 4; z++) {
+                    if (m['' + x + '_' + y + '_' + z] > 0) {
+                        tester++;
+                    }
+                }
+                if (tester == 4) {
+                    var open = Math.floor(random() * 4);
+                    if (open == 0) {
+                        m['' + x + '_' + y + '_' + 0] = 0;
+                        m['' + (x + 1) + '_' + y + '_' + 2] = 0;
+                    }
+                    if (open == 1) {
+                        m['' + x + '_' + y + '_' + 1] = 0;
+                        m['' + x + '_' + (y + 1) + '_' + 3] = 0;
+                    }
+                    if (open == 2) {
+                        m['' + x + '_' + y + '_' + 2] = 0;
+                        m['' + (x - 1) + '_' + y + '_' + 0] = 0;
+                    }
+
+                    if (open == 3) {
+                        m['' + x + '_' + y + '_' + 3] = 0;
+                        m['' + x + '_' + (y - 1) + '_' + 1] = 0;
+                    }
+                }
+            }
+        }
+        var s=1;
+        while(s>0){
+            s=0;
+            for (x = 0; x < 80; x++) {
+                for (y = 0; y < 80; y++) {
+                    var tester = 0;
+                    for (z = 0; z < 4; z++) {
+                        if (m['' + x + '_' + y + '_' + z] > 0) {
+                            tester++;
+                        }
+                    }
+                    if (tester == 3) {
+                        var col=1;
+                        m['' + x + '_' + y + '_' + 0] = col;
+                        m['' + (x + 1) + '_' + y + '_' + 2] = col;
+                        m['' + x + '_' + y + '_' + 1] = col;
+                        m['' + x + '_' + (y + 1) + '_' + 3] = col;
+                        m['' + x + '_' + y + '_' + 2] = col;
+                        m['' + (x - 1) + '_' + y + '_' + 0] = col;
+                        m['' + x + '_' + y + '_' + 3] = col;
+                        m['' + x + '_' + (y - 1) + '_' + 1] = col;
+                        s=1;
+                    }
+                }
+            }
+        }
+
+        for (x = 0; x < 80; x++) {
+            for (y = 0; y < 80; y++) {
+                var tester = 0;
+                for (z = 0; z < 4; z++) {
+                    if (m['' + x + '_' + y + '_' + z] > 0) {
+                        tester++;
+                    }
+                }
+                if (tester == 4) {
+                    m['' + x + '_' + y + '_solid']=1;            
+                    m['' + x + '_' + y + '_' + 0] = 2;
+                    m['' + (x + 1) + '_' + y + '_' + 2] = 2;
+                    m['' + (x-1) + '_' + y + '_' + 0] = 2;
+                    m['' + (x) + '_' + y + '_' + 2] = 2;           
+                    m['' + x + '_' + y + '_' + 1] = 2;
+                    m['' + x + '_' + (y + 1) + '_' + 3] =2;
+                    m['' + x + '_' + (y-1) + '_' + 1] = 2;
+                    m['' + x + '_' + (y ) + '_' + 3] =2;
+                }
+            }
+        }
+        // straights
+        if (lanes>0) {
+            for (x = 0; x < 80; x++) {
+                var tester = 0;
+                for (y = 0; y < 80; y++) {
+                    if (m['' + x + '_' + y + '_' + 3] == 0) {
+                        tester++;
+                    } else {
+                        tester = 0;
+                    }
+                    m['' + x + '_' + y + '_a' ] = 0; 
+                    if (tester > lanes) {
+                        m['' + x + '_' + y + '_a' ] = 1;
+                    }
+                }
+                for (y = 78; y >1; y=y-1) {
+                    if (m['' + x + '_' + (y+1) + '_a'] ==1 && m['' + x + '_' + (y +1) +'_' + 3] == 0) {
+                        m['' + x + '_' + y + '_a'] =1;
+                    }
+                }
+            }
+            for (y = 0; y < 80; y++) {    
+                var tester = 0;
+                for (x = 0; x < 80; x++) {
+                    if (m['' + x + '_' + y + '_' + 2] == 0) {
+                        tester++;
+                    } else {
+                        tester = 0;
+                    }
+                    if (tester > lanes) {
+                        m['' + x + '_' + y + '_a' ] = 2;
+                    }
+                }
+                for (x = 78; x >1; x=x-1) {
+                    if (m['' + (x+1) + '_' + y + '_a'] ==2 && m['' + (x+1) + '_' + y +'_' + 2] ==0) {
+                        m['' + x + '_' + y + '_a'] =2;
+                    }
+                }
+            }
+            for (x = 1; x < 79; x++) {
+                for (y = 1; y < 79; y++) { 
+                    if (m['' + (x) + '_' + y + '_a'] >0 && m['' + (x+1) + '_' + y + '_a'] > 0) {
+                        m['' + x + '_' + y + '_' + 0] = 0;
+                        m['' + (x + 1) + '_' + y + '_' + 2] = 0;           
+                    }
+
+                    if (m['' + (x) + '_' + y + '_a'] >0 && m['' + x + '_' + (y+1) + '_a'] > 0) {
+                        m['' + x + '_' + y + '_' + 1] = 0;
+                        m['' + x + '_' + (y + 1) + '_' + 3] = 0;   
+                    }
+                }
+            }
+        }
+    }
+    function makecourse() {
+        beginner_cx[0] = 30 + Math.floor(random() * 6 - 3);
+        beginner_cy[0] = 50 + Math.floor(random() * 6 - 3); ;
+        var tries=0;
+        while (m['' + beginner_cx[0] + '_' + beginner_cy[0] + '_solid']==1 && tries <100){
+            beginner_cx[0] = 30 + Math.floor(random() * 6 - 3);
+            beginner_cy[0] = 50 + Math.floor(random() * 6 - 3); ;
+            tries++
+        }
+        beginner_cx[1] = 26+ Math.floor(random() * 6 - 3); ;
+        beginner_cy[1] = 41 + Math.floor(random() * 6 - 3); ;
+        var tries=0;
+        while (m['' + beginner_cx[1] + '_' + beginner_cy[1] + '_solid']==1 && tries <100){
+            beginner_cx[1] = 26+ Math.floor(random() * 6 - 3); ;
+            beginner_cy[1] = 41 + Math.floor(random() * 6 - 3); ;
+            tries++
+        }
+
+        beginner_cx[2] = 29 + Math.floor(random() * 5 - 2); ;
+        beginner_cy[2] = 32 + Math.floor(random() * 5 - 2); ;
+        var tries=0;
+        while (m['' + beginner_cx[2] + '_' + beginner_cy[2] + '_solid']==1 && tries <100){
+            beginner_cx[2] = 29 + Math.floor(random() * 5 - 2); ;
+            beginner_cy[2] = 32 + Math.floor(random() * 5 - 2); ;
+            tries++
+        }
+
+
+        beginner_cx[3] = 25+ Math.floor(random() * 4 - 2);
+        beginner_cy[3] = 22+ Math.floor(random() * 4-2);
+        var tries=0;
+        while (m['' + beginner_cx[3] + '_' + beginner_cy[3] + '_solid']==1 && tries <100){
+            beginner_cx[3] = 25+ Math.floor(random() * 4 - 2);
+            beginner_cy[3] = 22+ Math.floor(random() * 4-2);
+            tries++
+        }
+
+        for(i=0;i<beginner_cx.length;i++){
+            m['' + beginner_cx[i] + '_' + beginner_cy[i] + '_c'] = -1;
+        }
+    }
+
+    function updateview() {
+        if (nextcontrol == 1 * (m['' + (x0) + '_' + (y0) + '_c'])) {
+            splits[nextcontrol] = Date.now() / 1000 + penalty;
+            nextcontrol = nextcontrol + 1;
+        }
+        if (nextcontrol == cx.length) {
+            finished();
+        }
+        v = [];
+    
+        if (s0 == 0) {
+            for (x = -4; x < 5; x++) {
+                for (y = -4; y < 5; y++) {
+                    v['' + x + '_' + y + '_c'] = m['' + (x0 + x) + '_' + (y0 + y) + '_c'];
+                    for (z = 0; z < 2; z++) {
+                        v['' + x + '_' + y + '_' + z] = m['' + (x0 + x) + '_' + (y0 + y) + '_' + z];
+                    }
+                    v['' + x + '_' + y + '_a'] = m['' + (x0 + x) + '_' + (y0 + y) + '_a'];
+                }
+            }
+        }
+    
+        if (s0 == 1) {
+            for (x = -4; x < 5; x++) {
+                for (y = -4; y < 5; y++) {
+                    v['' + x + '_' + y + '_c'] = m['' + (x0 - y) + '_' + (y0 + x) + '_c'];
+                    for (z = 0; z < 2; z++) {
+                        zz = z + 1;
+                        v['' + x + '_' + y + '_' + z] = m['' + (x0 - y) + '_' + (y0 + x) + '_' + (zz)];
+                    }
+                    v['' + x + '_' + y + '_a'] = m['' + (x0 - y) + '_' + (y0 + x) + '_a'];
+                }
+            }
+        }
+    
+        if (s0 == 2) {
+            for (x = -4; x < 5; x++) {
+                for (y = -4; y < 5; y++) {
+                    v['' + x + '_' + y + '_c'] = m['' + (x0 - x) + '_' + (y0 - y) + '_c'];
+                    for (z = 0; z < 2; z++) {
+                        v['' + x + '_' + y + '_' + z] = m['' + (x0 - x) + '_' + (y0 - y) + '_' + (z + 2)];
+                    }
+                    v['' + x + '_' + y + '_a'] = m['' + (x0 - x) + '_' + (y0 - y) + '_a'];
+                }
+            }
+        }
+    
+        if (s0 == 3) {
+            for (x = -4; x < 5; x++) {
+                for (y = -4; y < 5; y++) {
+                    v['' + x + '_' + y + '_c'] = m['' + (x0 + y) + '_' + (y0 - x) + '_c'];
+                    for (z = 0; z < 2; z++) {
+                        zz = z - 1;
+                        if (zz == -1) {
+                            zz = 3;
+                        }
+                        v['' + x + '_' + y + '_' + z] = m['' + (x0 + y) + '_' + (y0 - x) + '_' + (zz)];
+                    }
+                    v['' + x + '_' + y + '_a'] = m['' + (x0 + y) + '_' + (y0 - x) + '_a'];
+                }
+            }
+        }
+    
+        view.clearRect(0, 0, 500, 500);
+        pov.clearRect(0, 0, 500, 500);
+    
+        pov.clearRect(0, 0, 500, 500);
+        pov.fillStyle = "black";
+        pov.fillRect(0, 0, 500, 500);
+        pov.fillStyle = '#f00';
+    
+        view.beginPath();
+        view.moveTo(90, 92);
+        view.lineTo(90, 88);
+        view.closePath();
+        view.stroke();
+    
+        for (y = 1; y < 8; y++) {
+            for (xx = 1; xx < 8; xx++) {
+                x = xx;
+                if (typeof v['' + (x - 4) + '_' + (y - 4) + '_a'] === 'undefined') {}
+                else if( v['' + (x - 4) + '_' + (y - 4) + '_a'] >0 ){
+                    pov.fillStyle = '#040';
+                    pov.strokeStyle = '#040';
+                    var yy = y ;
+                    pov.beginPath();
+                    pov.moveTo(250 + ((x - 4.0 + .0) * 10 - 5) * (yy + 0.0) ** 2 * 2.0, 250 + ((yy + 0.0) * 10 + 5) * (yy + 0.0) ** 1 * 1);
+                    pov.lineTo(250 + ((x - 4.0 + 1) * 10 - 5) * (yy + 0.0) ** 2 * 2.0, 250 + ((yy + 0.0) * 10 + 5) * (yy + 0.0) ** 1 * 1);
+                    pov.lineTo(250 + ((x - 4.0 + 1) * 10 - 5) * (yy + 1) ** 2 * 2.0, 250 + ((yy + 1) * 10 + 5) * (yy + 1) ** 1 * 1);
+                    pov.lineTo(250 + ((x - 4.0 + .0) * 10 - 5) * (yy + 1) ** 2 * 2.0, 250 + ((yy + 1) * 10 + 5) * (yy + 1) ** 1 * 1);
+                    pov.closePath();
+                    pov.fill();
+                    pov.stroke();
+                }
+            }
+        }
+        // controls
+    
+        pov.fillStyle = '#f00';
+        for (y = 1; y < 8; y++) {
+            for (xx = 1; xx < 8; xx++) {
+                x = xx;
+                if (typeof v['' + (x - 4) + '_' + (y - 3) + '_c'] !== 'undefined') {
+                    if(v['' + (x - 4) + '_' + (y - 3) + '_c'] != -1){
+                        pov.fillStyle = '#f00';
+                        var yy = y + 1;
+                        pov.beginPath();
+                        pov.moveTo(250 + ((x - 4.0 + .4) * 10 - 5) * (yy + 0.4) ** 2 * 2.0, 250 + ((yy + 0.4) * 10 + 5) * (yy + 0.4) ** 1 * 1);
+                        pov.lineTo(250 + ((x - 4.0 + .6) * 10 - 5) * (yy + 0.4) ** 2 * 2.0, 250 + ((yy + 0.4) * 10 + 5) * (yy + 0.4) ** 1 * 1);
+                        pov.lineTo(250 + ((x - 4.0 + .6) * 10 - 5) * (yy + 0.6) ** 2 * 2.0, 250 + ((yy + 0.6) * 10 + 5) * (yy + 0.6) ** 1 * 1);
+                        pov.lineTo(250 + ((x - 4.0 + .4) * 10 - 5) * (yy + 0.6) ** 2 * 2.0, 250 + ((yy + 0.6) * 10 + 5) * (yy + 0.6) ** 1 * 1);
+                        pov.closePath();
+                        pov.fill();
+                        
+    
+                        pov.fillStyle = '#fff';
+                        pov.beginPath();
+                        pov.moveTo(250 + ((x - 4.0 + .42) * 10 - 5) * (yy + 0.42) ** 2 * 2.0, 250 + ((yy + 0.42) * 10 + 5) * (yy + 0.42) ** 1 * 1);
+                        pov.lineTo(250 + ((x - 4.0 + .58) * 10 - 5) * (yy + 0.42) ** 2 * 2.0, 250 + ((yy + 0.42) * 10 + 5) * (yy + 0.42) ** 1 * 1);
+                        pov.lineTo(250 + ((x - 4.0 + .42) * 10 - 5) * (yy + 0.58) ** 2 * 2.0, 250 + ((yy + 0.58) * 10 + 5) * (yy + 0.58) ** 1 * 1);
+                        pov.closePath();
+                        pov.fill();
+                    }
+                }
+            }
+        }
+        for (y = 1; y < 8; y++) {
+            pov.fillStyle = '#999'; ; //fill[y];
+            pov.strokeStyle = "#bbb";
+            pov.lineWidth = 2;
+            for (z = 0; z < 2; z++) {
+                for (xx = 1; xx < 8; xx++) {
+                    x = xx;
+                    if (xx > 4) {
+                        x = 11 - xx;
+                    }
+                    pov.fillStyle = '#999'; 
+                    if (v['' + (x - 4) + '_' + (y - 4) + '_' + z] >0) {
+                        pov.fillStyle = povstyle[v['' + (x - 4) + '_' + (y - 4) + '_' + z]];
+                        if (z == 0) {
+                            view.beginPath();
+                            view.moveTo(50 + x * 10 + 5, 50 + y * 10 - 5);
+                            view.lineTo(50 + x * 10 + 5, 50 + y * 10 + 5);
+                            view.closePath();
+                            view.stroke()
+    
+                            var yy = y + 1;
+                            if (yy - 7 < 0) {
+                                pov.beginPath();
+                                pov.moveTo(250 + ((x - 4.0) * 10 + 5) * (yy) ** 2 * 2.0, 250 + (yy * 10 + 5) * (yy) ** 1 * 1);
+                                pov.lineTo(250 + ((x - 4.0) * 10 + 5) * ((yy - 1)) ** 2 * 2.0, 250 + ((yy - 1) * 10 + 5) * (yy - 1) ** 1 * 1);
+                                pov.lineTo(250 + ((x - 4.0) * 10 + 5) * ((yy - 1)) ** 2 * 2.0, 250 - ((yy - 1) * 10 + 5) * (yy - 1) ** 1 * 1);
+                                pov.lineTo(250 + ((x - 4.0) * 10 + 5) * (yy) ** 2 * 2.0, 250 - (yy * 10 + 5) * (yy) ** 1 * 1);
+                                pov.lineTo(250 + ((x - 4.0) * 10 + 5) * (yy) ** 2 * 2.0, 250 + (yy * 10 + 5) * (yy) ** 1 * 1);
+                                pov.closePath();
+                                pov.fill();
+                                pov.stroke();
+                            }
+                        } else {
+                            view.beginPath();
+                            view.moveTo(50 + x * 10 - 5, 50 + y * 10 + 5);
+                            view.lineTo(50 + x * 10 + 5, 50 + y * 10 + 5);
+                            view.closePath();
+                            view.stroke();
+    
+                            var yy = y + 1;
+                            if (yy - 6 < 0 && !(yy == 5 && x == 4)) {
+                                pov.beginPath();
+                                pov.moveTo(250 + ((x - 4.0) * 10 - 5) * (yy) ** 2 * 2.0, 250 + (yy * 10 + 5) * (yy) ** 1 * 1);
+                                pov.lineTo(250 + ((x - 4.0) * 10 + 5) * (yy) ** 2 * 2.0, 250 + (yy * 10 + 5) * (yy) ** 1 * 1);
+                                pov.lineTo(250 + ((x - 4.0) * 10 + 5) * (yy) ** 2 * 2.0, 250 - (yy * 10 + 5) * (yy) ** 1 * 1);
+                                pov.lineTo(250 + ((x - 4.0) * 10 - 5) * (yy) ** 2 * 2.0, 250 - (yy * 10 + 5) * (yy) ** 1 * 1);
+                                pov.lineTo(250 + ((x - 4.0) * 10 - 5) * (yy) ** 2 * 2.0, 250 + (yy * 10 + 5) * (yy) ** 1 * 1);
+                                pov.closePath();
+                                pov.fill();
+                                pov.stroke();
+                            }
+                        }
+                    }
+    
+                }
+            }
+        }
+    
+        pov.strokeStyle = "#900";
+        pov.lineWidth = 3;
+        if (s0 == 0) {
+            pov.beginPath();
+            pov.moveTo(250, 470);
+            pov.lineTo(250, 450);
+            pov.lineTo(255, 455);
+            pov.lineTo(250, 450);
+            pov.lineTo(245, 455);
+            pov.lineTo(250, 450);
+            pov.closePath();
+            pov.stroke();
+        }
+        if (s0 == 2) {
+            pov.beginPath();
+    
+            pov.moveTo(250, 470);
+            pov.lineTo(250, 490);
+            pov.lineTo(255, 485);
+            pov.lineTo(250, 490);
+            pov.lineTo(245, 485);
+            pov.lineTo(250, 490);
+            pov.closePath();
+            pov.stroke();
+        }
+        if (s0 == 3) {
+            pov.beginPath();
+            pov.moveTo(250, 470);
+            pov.lineTo(270, 470);
+            pov.lineTo(265, 465);
+            pov.lineTo(270, 470);
+            pov.lineTo(265, 475);
+            pov.lineTo(270, 470);
+            pov.closePath();
+            pov.stroke();
+        }
+        if (s0 == 1) {
+            pov.beginPath();
+            pov.moveTo(250, 470);
+            pov.lineTo(230, 470);
+            pov.lineTo(235, 465);
+            pov.lineTo(230, 470);
+            pov.lineTo(235, 475);
+            pov.lineTo(230, 470);
+            pov.closePath();
+            pov.stroke();
+        }
+    
+        pov.font = "20px Arial";
+        pov.fillStyle = '#fff';
+        if (1 * nextcontrol > 0) {
+            pov.fillText("Next control: " + nextcontrol, 10, 30);
+        } else {
+            pov.fillText("" + nextcontrol, 10, 30);
+        }
+        if (started) {
+            var tmp = "" + Math.floor(Date.now() / 1000 - starttime + penalty);
+            pov.fillStyle = '#000';
+    
+            pov.fillRect(6, 468, 8 + 11 * tmp.length, 27);
+            pov.fillStyle = '#fff';
+    
+            pov.fillText(tmp, 10, 490);
+        }
+    }
+    makemaze();
+    makecourse();
+
+    for(i=0;i<beginner_cx.length;i++){
+        cx[i]=beginner_cx[i];
+        cy[i]=beginner_cy[i];
+        m['' + cx[i] + '_' + cy[i] + '_c'] = '' + i;
+    }
+
+    let x0 = cx[0];
+    let y0 = cy[0];
+
+    let s0 = 0;
+    m['' + x0 + '_' + y0 + '_c'] = 's';
+
+    var style=[];
+    style[1]='#000';
+    style[2]='#000';
+    style[3]='#060';
+    drawmaze();
+    
+    var povstyle=[];
+    povstyle[1]='#aaa';
+    povstyle[2]='#333';
+    povstyle[3]='#454';
+
+    var v = [];
+    var splits = [];
+
+    var fill = [];
+    fill[0] = '#200';
+    fill[1] = '#400';
+    fill[2] = '#800';
+    fill[3] = '#c0';
+    fill[4] = '#f00';
+    updateview();
+
+    function front() {
+        if (v['' + 0 + '_' + (-1) + '_' + 1] == 0) {
+            if (s0 == 0) {
+                y0 = y0 - 1;
+            }
+            if (s0 == 2) {
+                y0 = y0 + 1;
+            }
+            if (s0 == 1) {
+                x0 = x0 + 1;
+            }
+            if (s0 == 3) {
+                x0 = x0 - 1;
+            }
+            trackx.push(x0);
+            tracky.push(y0);
+            trackt.push(Date.now() / 1000 + penalty-starttime);
+            updateview();
+        }
+    }
+
+    function force() {
+        if (v['' + 0 + '_' + (-1) + '_' + 1] > 0) {
+            penalty = penalty + 10;
+            if (s0 == 0) {
+                y0 = y0 - 1;
+            }
+            if (s0 == 2) {
+                y0 = y0 + 1;
+            }
+            if (s0 == 1) {
+                x0 = x0 + 1;
+            }
+            if (s0 == 3) {
+                x0 = x0 - 1;
+            }
+            trackx.push(x0);
+            tracky.push(y0);
+            trackt.push(Date.now() / 1000 + penalty-starttime);
+            updateview();
+        }
+    }
+
+    function back() {
+        if (v['' + 0 + '_' + (0) + '_' + 1] == 0) {
+            if (s0 == 0) {
+                y0 = y0 + 1;
+            }
+            if (s0 == 2) {
+                y0 = y0 - 1;
+            }
+            if (s0 == 1) {
+                x0 = x0 - 1;
+            }
+            if (s0 == 3) {
+                x0 = x0 + 1;
+            }
+            trackx.push(x0);
+            tracky.push(y0);
+            trackt.push(Date.now() / 1000 + penalty-starttime);
+            updateview();
+        }
+    }
+
+    function turnleft() {
+        s0 = s0 - 1;
+        if (s0 == -1) {
+            s0 = 3;
+        }
+        updateview();
+    }
+
+    function turnright() {
+        s0 = s0 + 1;
+        if (s0 == 4) {
+            s0 = 0;
+        }
+        updateview();
+    }
+    var animi = 0;
+    function checkKey(e) {
+        e = e || window.event;
+        console.log(e.keyCode)
+        if (started && animi==0) {
+            if (e.keyCode == '81') {
+                quit();
+            }
+            if (e.keyCode == (options?.frontKey || '38') && !mapvisible) {
+                front();
+            } else if (e.keyCode == (options?.backKey || '40') && !mapvisible) {
+                back();
+            } else if (e.keyCode == (options?.leftKey || '37')) {
+                turnleft();
+            } else if (e.keyCode == (options?.rightKey || '39')) {
+                turnright();
+            } else if (e.keyCode == (options?.forceKey || '32') && !mapvisible) {
+                force();
+            } else if (e.keyCode == (options?.mapKey || '77')) {
+                // map switch
+                if (mapvisible) {
+                    mapvisible = false;
+                    mazeEl.style.display = "none";
+                    povEl.style.display = "block";
+                } else {
+                    mapvisible = true;
+                    mazeEl.style.display = "block";
+                    povEl.style.display = "none";
+                    trackx.push('m');
+                    tracky.push('m');
+                    trackt.push(Date.now() / 1e3 + penalty - starttime);
+                }
+            }
+        } else if (!started && e.keyCode == (options?.startKey || '77') && animi ==0 && !(1*nextcontrol>0)) {
+            started = true;
+            clock();
+            nextcontrol = 1;
+            starttime = Date.now() / 1000;
+            updateview();
+
+        } else if (e.keyCode == '82' && animi == 0) {
+            restart();
+        }
+    }
+
+    function clock() {
+        if (started) {
+            setTimeout(function () {
+                clock()
+            }, 999);
+        }
+        var tmp = "" + Math.floor(Date.now() / 1000 - starttime + penalty);
+        pov.fillStyle = '#000';
+
+        pov.fillRect(6, 468, 8 + 11 * tmp.length, 27);
+        pov.fillStyle = '#fff';
+
+        pov.fillText(tmp, 10, 490);
+    }
+    var anims=[];
+    var tries = 0;
+
+    function restart() {
+        nextcontrol = "Start by pressing key 's'";
+        started = false;
+        mapvisible = false;
+        penalty = 0;
+        x0 = cx[0];
+        y0 = cy[0];
+        s0 = 0;
+        splits = [];
+        trackx = [];
+        tracky = [];
+        trackt = [];
+
+        mazeEl.style.display = "none";
+        povEl.style.display = "block";
+        drawmaze();
+        updateview();
+    }
+
+
+    function finished() {
+        tries++;
+        var d = Date.now() / 1000;
+        var result = penalty + Math.floor(100 * ((d) - starttime)) / 100;
+
+        var splitsstring = '';
+        for (i = 1; i < splits.length; i++) {
+            splitsstring = splitsstring + " " + (Math.floor(100 * (splits[i] - starttime)) / 100);
+        }
+        
+        resultEl.innerHTML = "Result: "+ result + " splits:" + splitsstring;
+
+        maze.beginPath();
+        maze.strokeStyle = '#55f';
+        maze.moveTo(cx[0] * 10, cy[0] * 10);
+        for (i = 1; i < trackx.length; i++) {
+            if (trackx[i] == 'm') {}
+            else {
+                maze.lineTo(trackx[i] * 10, tracky[i] * 10);
+            }
+        }
+        maze.stroke()
+        for (i = 1; i < trackx.length; i++) {
+            if (trackx[i] == 'm' && trackx[i - 1] != 'm') {
+                maze.beginPath();
+                maze.arc(1 * trackx[i - 1] * 10, 1 * tracky[i - 1] * 10, 3, 0, 2 * Math.PI, false);
+                maze.stroke();
+            }
+        }
+        started = false;
+        mapvisible = true;
+        mazeEl.style.display = "block";
+        povEl.style.display = "none";
+    }
+
+    return {checkKey};
+}
+
+;(function () {
+    let gameSeed = Math.floor(Math.random() * 999999999);
+    if (getParameterByName('maze') !== '') {
+      gameSeed = getParameterByName('maze') * 1;
+    }
+    var maze2 = new Maze("gameA", {seed: gameSeed, frontKey: "87", backKey: "83", leftKey: "65", rightKey: "68", mapKey: "71", startKey: "75"});
+    var maze = new Maze("gameB", {seed: gameSeed, mapKey: "17", forceKey: "16", startKey: "75"});
+  
+    document.onkeydown = (e) => {
+      maze.checkKey(e);
+      maze2.checkKey(e);
+    };
+  })();
+
+window.addEventListener("keydown", function(e) {
+    if(["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].indexOf(e.code) > -1) {
+        e.preventDefault();
+    }
+}, false);
+
+
+</script>
+<body>
+</html>
+
